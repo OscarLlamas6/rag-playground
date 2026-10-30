@@ -41,6 +41,19 @@ def _local_url() -> str:
     return url
 
 
+def _llm_model(provider: str) -> str:
+    """Modelo que redacta las respuestas.
+
+    - Con `local` manda LOCAL_LLM_MODEL (el identificador que muestra LM Studio). Así puedes dejar `LLM_MODEL=gpt-6-luna`
+      en el .env y cambiar de proveedor tocando solo LLM_PROVIDER, sin pedirle a LM Studio un modelo de OpenAI.
+    - Con anthropic u openai manda LLM_MODEL y, si está vacío, el modelo económico por defecto de ese proveedor.
+    """
+    clean = lambda value: (value or "").split("#")[0].strip()  # noqa: E731
+    if provider == "local":
+        return clean(os.getenv("LOCAL_LLM_MODEL")) or clean(os.getenv("LLM_MODEL"))
+    return clean(os.getenv("LLM_MODEL")) or DEFAULT_LLM_MODEL.get(provider, "fake")
+
+
 def _choice(name: str, default: str, allowed: tuple[str, ...]) -> str:
     value = os.getenv(name, default).strip().lower()
     if value not in allowed:
@@ -71,9 +84,7 @@ class Settings:
 def get_settings() -> Settings:
     llm = _choice("LLM_PROVIDER", "anthropic", LLM_PROVIDERS)
     emb = _choice("EMBEDDINGS_PROVIDER", "local", EMBEDDING_PROVIDERS)
-    llm_model = os.getenv("LLM_MODEL") or (
-        os.getenv("LOCAL_LLM_MODEL", "").split("#")[0].strip() if llm == "local" else DEFAULT_LLM_MODEL.get(llm, "fake")
-    )
+    llm_model = _llm_model(llm)
     emb_model = os.getenv("EMBEDDINGS_MODEL", "").split("#")[0].strip() or DEFAULT_EMBEDDING_MODEL.get(emb, "fake-hash")
     dims = os.getenv("EMBEDDINGS_DIMENSIONS", "").split("#")[0].strip()
     return Settings(

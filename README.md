@@ -82,7 +82,7 @@ EMBEDDINGS_MODEL=text-embedding-3-small      # ojo: el de LM Studio (nomic) no e
   Con OpenAI no necesitas LM Studio, así que sirve el compose normal.
 - **Costo:** `text-embedding-3-small` cuesta ≈ US$ 0.02 por millón de tokens (ingestar estos documentos son fracciones de centavo) y
   cada pregunta, del orden de US$ 0.0001 a 0.0004 (el intermedio con reranking suma una llamada). La interfaz muestra los tokens y el costo.
-- **Dos modelos distintos:** `LLM_MODEL` es el que redacta las respuestas y `EMBEDDINGS_MODEL`, el que vectoriza. Se configuran por separado.
+- **Dos modelos distintos:** `LLM_MODEL` es el que redacta las respuestas (con OpenAI o Anthropic; con `LLM_PROVIDER=local` manda `LOCAL_LLM_MODEL`) y `EMBEDDINGS_MODEL`, el que vectoriza. Se configuran por separado.
   Si el modelo por defecto no existe en tu cuenta, cámbialo con `LLM_MODEL`.
 
 ## Agregar otra implementación
