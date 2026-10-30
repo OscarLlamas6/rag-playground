@@ -1,0 +1,39 @@
+# rag-intermedio: backend (FastAPI) + web (Go).
+#
+#   docker compose up --build            # completo: usa tu .env (modelo, embeddings, Pinecone)
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build    # demo: sin cuentas ni servidores
+#
+# Interfaz: http://localhost:8081   ·   API: http://localhost:8010/docs
+name: rag-intermedio
+
+services:
+  backend:
+    build: ./backend
+    env_file:                                 # ambos son opcionales; el de este proyecto gana sobre el de la raíz
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # para llegar a LM Studio, que corre en tu máquina
+    ports:
+      - "127.0.0.1:8010:8010"                  # solo accesible desde tu equipo
+    volumes:
+      - ./backend/data:/app/data:ro           # editar documentos y preguntas sin reconstruir la imagen
+      - ./backend/prompts:/app/prompts:ro
+      - cache:/app/.cache                  # copia local de los fragmentos (BM25): sobrevive a recrear el contenedor
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      BACKEND_URL: http://backend:8010
+    ports:
+      - "127.0.0.1:8081:8081"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  cache:

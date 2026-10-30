@@ -218,3 +218,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# rag-playground
+.cache/
+*.exe
+rag-*/web/web

@@ -1,0 +1,8 @@
+# Override de demo: embeddings y modelo "fake", todo en memoria. No necesita cuentas ni servidores.
+# Los vectores "fake" son un hash de palabras: no entienden significado. Sirven para ver la interfaz y el flujo.
+services:
+  backend:
+    environment:
+      LLM_PROVIDER: fake
+      EMBEDDINGS_PROVIDER: fake
+      STORE: memory

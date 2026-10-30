@@ -1,0 +1,35 @@
+# rag-simple: backend (FastAPI) + web (Go).
+#
+#   docker compose up --build            # completo: usa tu .env (modelo, embeddings, Neon)
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build    # demo: sin cuentas ni servidores
+#
+# Interfaz: http://localhost:8080   ·   API: http://localhost:8000/docs
+name: rag-simple
+
+services:
+  backend:
+    build: ./backend
+    env_file:                                 # ambos son opcionales; el de este proyecto gana sobre el de la raíz
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # para llegar a LM Studio, que corre en tu máquina
+    ports:
+      - "127.0.0.1:8000:8000"                  # solo accesible desde tu equipo
+    volumes:
+      - ./backend/data:/app/data:ro           # editar documentos y preguntas sin reconstruir la imagen
+      - ./backend/prompts:/app/prompts:ro
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      BACKEND_URL: http://backend:8000
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped

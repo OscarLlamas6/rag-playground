@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RAG intermedio</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-row">
+      <div>
+        <h1>RAG intermedio</h1>
+        <p class="sub">Vectores + palabras exactas, filtros, padre-hijo y reranking. Una pregunta, sin historial.</p>
+      </div>
+      <div id="chips" class="chips" aria-live="polite"></div>
+    </div>
+    <nav class="wrap tabs" role="tablist" aria-label="Secciones">
+      <button role="tab" aria-selected="true" data-tab="ask">Preguntar</button>
+      <button role="tab" aria-selected="false" data-tab="ingest">Ingesta</button>
+      <button role="tab" aria-selected="false" data-tab="eval">Evaluación</button>
+      <button role="tab" aria-selected="false" data-tab="docs">Documentos</button>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <div id="alert" class="alert" role="alert" hidden></div>
+
+    <!-- ───────── Preguntar ───────── -->
+    <section id="tab-ask" class="panel">
+      <form id="ask-form" class="card">
+        <label for="question">Tu pregunta</label>
+        <textarea id="question" rows="2" maxlength="500" placeholder="¿Qué indica la alarma OPT-1107?" required></textarea>
+        <div class="row">
+          <label class="inline">Búsqueda
+            <select id="mode">
+              <option value="hybrid">Híbrida (vectores + BM25, RRF)</option>
+              <option value="vector">Solo vectores (significado)</option>
+              <option value="bm25">Solo BM25 (palabras exactas)</option>
+            </select>
+          </label>
+          <label class="inline" title="Filtro por metadatos: se aplica dentro de la búsqueda">Audiencia
+            <select id="audience">
+              <option value="">Todas (sin filtro)</option>
+              <option value="residencial">Residencial</option>
+              <option value="negocio">Negocio</option>
+            </select>
+          </label>
+          <label class="inline">Fragmentos (k)
+            <input id="k" type="number" min="1" max="10" value="3">
+          </label>
+          <label class="inline" title="Cuántos candidatos aporta cada buscador y reordena el reranking">Candidatos
+            <input id="candidates" type="number" min="2" max="30" value="8">
+          </label>
+          <label class="check" title="Un LLM reordena los candidatos (suma una llamada al modelo)"><input id="rerank" type="checkbox"> Reranking con LLM</label>
+          <button id="ask-btn" class="primary" type="submit">Preguntar</button>
+        </div>
+        <div class="examples-label">Ejemplos por tipo de pregunta</div>
+        <div id="examples"></div>
+      </form>
+
+      <div id="result" hidden>
+        <article class="card answer" aria-live="polite">
+          <h2>Respuesta</h2>
+          <p id="answer-text" class="answer-text"></p>
+          <div id="badges" class="chips"></div>
+          <div id="usage" class="muted small"></div>
+        </article>
+
+        <h2 class="section-title">Cómo se buscó <span class="muted small">(cada etapa del pipeline, de izquierda a derecha)</span></h2>
+        <div id="stages" class="stages"></div>
+
+        <h2 class="section-title">Lo que vio el modelo <span class="muted small">(los k fragmentos finales)</span></h2>
+        <div id="hits" class="hits"></div>
+
+        <details class="card"><summary>Prompt enviado al modelo</summary><pre id="prompt"></pre></details>
+        <details class="card"><summary>Tiempos por etapa</summary><div id="timings"></div></details>
+      </div>
+    </section>
+
+    <!-- ───────── Ingesta ───────── -->
+    <section id="tab-ingest" class="panel" hidden>
+      <form id="ingest-form" class="card">
+        <h2>Ingesta</h2>
+        <p class="muted">Lee los documentos (Markdown, HTML y Word), los parte en fragmentos con metadatos (fuente, sección, audiencia), los vectoriza, los guarda en Pinecone y arma el índice BM25. Reconstruye todo el índice.</p>
+        <div class="row">
+          <label class="inline">Estrategia
+            <select id="strategy">
+              <option value="parent_child">Padre-hijo (busca pequeño, entrega la sección)</option>
+              <option value="sentences">Por oraciones (con solape)</option>
+              <option value="section">Por sección</option>
+            </select>
+          </label>
+          <label class="inline">Palabras máx.
+            <input id="max-words" type="number" min="10" max="400" value="35">
+          </label>
+          <label class="inline"><span id="overlap-label">Solape</span>
+            <input id="overlap" type="number" min="0" max="5" value="1" title="Cuánto se repite del final de un fragmento al inicio del siguiente">
+          </label>
+          <button id="ingest-btn" class="primary" type="submit">Ingestar</button>
+        </div>
+      </form>
+      <div id="ingest-result" class="card" hidden></div>
+    </section>
+
+    <!-- ───────── Evaluación ───────── -->
+    <section id="tab-eval" class="panel" hidden>
+      <div class="card">
+        <h2>Evaluación: ¿qué modo de búsqueda funciona mejor con estos documentos?</h2>
+        <p class="muted">Mide la <strong>recuperación</strong> (sin llamar al modelo: gratis) de los tres modos sobre 26 preguntas de 4 tipos. Cada técnica ataca un punto ciego distinto: las <em>paráfrasis</em> suelen ganarlas los vectores; los <em>códigos exactos</em>, BM25; la híbrida busca cubrir ambos (no siempre lo logra: compáralo con distintos fragmentados).</p>
+        <div class="row">
+          <button id="eval-modes" class="primary" type="button">Comparar modos (gratis)</button>
+          <button id="eval-rerank" type="button">Comparar también con reranking (cuesta)</button>
+        </div>
+      </div>
+      <div id="eval-result" hidden></div>
+    </section>
+
+    <!-- ───────── Documentos ───────── -->
+    <section id="tab-docs" class="panel" hidden>
+      <div id="docs" class="card"></div>
+    </section>
+  </main>
+
+  <footer class="wrap muted small">Datos ficticios (Andes Fibra). Con 26 preguntas, 1 o 2 aciertos de diferencia son ruido.</footer>
+  <script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,96 @@
+[
+  {
+    "id": "P01",
+    "pregunta": "¿Cuánto cuesta el plan de 300 Mbps?",
+    "fuente": "contratacion_y_planes.md",
+    "seccion": "Planes de internet",
+    "clave": "39"
+  },
+  {
+    "id": "P02",
+    "pregunta": "¿Qué plan trae una dirección IP fija?",
+    "fuente": "contratacion_y_planes.md",
+    "seccion": "Planes de internet",
+    "clave": "Negocio"
+  },
+  {
+    "id": "P03",
+    "pregunta": "Si no quiero firmar contrato de permanencia, ¿cuánto me cobran por instalar?",
+    "fuente": "contratacion_y_planes.md",
+    "seccion": "Instalación",
+    "clave": "60"
+  },
+  {
+    "id": "P04",
+    "pregunta": "¿Qué pasa si el técnico no llega en el horario acordado?",
+    "fuente": "contratacion_y_planes.md",
+    "seccion": "Instalación",
+    "clave": "5 dólares"
+  },
+  {
+    "id": "P05",
+    "pregunta": "¿Cuándo me suspenden el servicio por no pagar?",
+    "fuente": "facturacion_y_compensaciones.md",
+    "seccion": "Facturación y pagos",
+    "clave": "25"
+  },
+  {
+    "id": "P06",
+    "pregunta": "¿Cuánto tarda en reemplazarse un router defectuoso?",
+    "fuente": "soporte_tecnico.md",
+    "seccion": "Equipos y garantía",
+    "clave": "48"
+  },
+  {
+    "id": "P07",
+    "pregunta": "Se me puso una luz roja en el módem, ¿qué significa?",
+    "fuente": "soporte_tecnico.md",
+    "seccion": "Fallas y soporte técnico",
+    "clave": "fibra"
+  },
+  {
+    "id": "P08",
+    "pregunta": "¿A qué hora atienden por teléfono los domingos?",
+    "fuente": "soporte_tecnico.md",
+    "seccion": "Fallas y soporte técnico",
+    "clave": "9:00"
+  },
+  {
+    "id": "P09",
+    "pregunta": "Estuve dos días sin internet por culpa de la empresa, ¿me devuelven algo?",
+    "fuente": "facturacion_y_compensaciones.md",
+    "seccion": "Compensaciones por falta de servicio",
+    "clave": "descuento"
+  },
+  {
+    "id": "P10",
+    "pregunta": "Quiero darme de baja antes del año, ¿cuánto me cobran?",
+    "fuente": "contratacion_y_planes.md",
+    "seccion": "Cambios de plan, traslados y cancelación",
+    "clave": "15 dólares"
+  },
+  {
+    "id": "P11",
+    "pregunta": "¿Puedo cancelar el servicio llamando por teléfono?",
+    "fuente": "contratacion_y_planes.md",
+    "seccion": "Cambios de plan, traslados y cancelación",
+    "clave": "portal"
+  },
+  {
+    "id": "P12",
+    "pregunta": "Alguien me llamó diciendo que es de la empresa y me pidió un código que llegó por SMS, ¿es normal?",
+    "fuente": "soporte_tecnico.md",
+    "seccion": "Seguridad y privacidad",
+    "clave": "fraude"
+  },
+  {
+    "id": "F01",
+    "pregunta": "¿Qué plan de televisión por cable ofrecen y cuánto cuesta?",
+    "fuera_de_alcance": true
+  },
+  {
+    "id": "F02",
+    "pregunta": "¿Cuál es la capital de Australia?",
+    "fuera_de_alcance": true
+  }
+]

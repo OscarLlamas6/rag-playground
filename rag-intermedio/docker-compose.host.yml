@@ -1,0 +1,18 @@
+# Linux: los contenedores comparten la red de tu máquina. Así `localhost:1235` ES tu LM Studio aunque este solo
+# escuche en 127.0.0.1 (no hace falta activar «Serve on Local Network»). Los servicios escuchan solo en 127.0.0.1.
+# Uso:  docker compose -f docker-compose.yml -f docker-compose.host.yml up --build -d
+# No funciona en Docker Desktop (Mac/Windows): allí activa «Serve on Local Network» en LM Studio y usa el compose normal.
+services:
+  backend:
+    network_mode: host
+    ports: !reset []
+    extra_hosts: !reset []
+    environment:
+      RUNNING_IN_DOCKER: "0"        # con la red del anfitrión, `localhost` ya es correcto: no se traduce
+      HOST: 127.0.0.1
+  web:
+    network_mode: host
+    ports: !reset []
+    environment:
+      BACKEND_URL: http://127.0.0.1:8010
+      WEB_ADDR: 127.0.0.1:8081
