@@ -48,7 +48,15 @@ async def dependency_error(_request, exc: Exception):
 
 
 def _require_index(svc: RagService) -> None:
-    if svc.status()["chunks"] == 0:
+    """409 solo si el almacén está de verdad vacío. Si no se puede consultar, el error se propaga (503 con su mensaje):
+    antes se confundía "no puedo contar" con "no hay nada" y se mandaba a ingestar de nuevo sin necesidad."""
+    try:
+        chunks = svc.store.count()
+    except StoreError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise StoreError(f"No se pudo consultar el almacén ({type(exc).__name__}): {exc}") from exc
+    if chunks == 0:
         raise HTTPException(status_code=409, detail="El almacén está vacío: ejecuta primero la ingesta.")
 
 

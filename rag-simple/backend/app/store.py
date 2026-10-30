@@ -106,9 +106,44 @@ class NeonStore:
             register_vector(self._conn)
         return self._conn
 
-    def reset(self, dimension: int) -> None:
+    def _drop_connection(self) -> None:
+        try:
+            if self._conn is not None:
+                self._conn.close()
+        except Exception:  # noqa: BLE001 - ya estaba rota
+            pass
+        self._conn = None
+
+    def _run(self, operation):
+        """Ejecuta `operation(conexión)` y se recupera de una conexión caída.
+
+        Neon suspende el cómputo (o el servidor cierra la sesión) tras un rato sin actividad: la conexión larga muere y la
+        siguiente consulta falla con OperationalError. Se descarta, se abre otra y se reintenta UNA vez; todas las
+        operaciones son idempotentes. Cualquier otro error de la base se convierte en un StoreError con un mensaje claro
+        (y no en un "almacén vacío" ni en un error 500 sin explicación).
+        """
+        import psycopg
+
         with self._lock:
-            c = self._connection()
+            for attempt in (1, 2):
+                try:
+                    return operation(self._connection())
+                except (psycopg.OperationalError, psycopg.InterfaceError) as exc:
+                    self._drop_connection()
+                    if attempt == 2:
+                        raise StoreError(f"Se perdió la conexión con Neon ({type(exc).__name__}). Reintenta en unos segundos.") from exc
+                except StoreError:
+                    raise
+                except psycopg.Error as exc:
+                    if "different vector dimensions" in str(exc):
+                        raise StoreError(
+                            f"La tabla '{self.table}' se creó con otro modelo de embeddings (otra dimensión de vector). "
+                            "Ve a la pestaña Ingesta y vuelve a ingestar con el modelo actual."
+                        ) from exc
+                    raise StoreError(f"Neon respondió con un error ({type(exc).__name__}): {str(exc).splitlines()[0]}") from exc
+
+    def reset(self, dimension: int) -> None:
+        def go(c):
             c.execute(f"DROP TABLE IF EXISTS {self.table}")
             c.execute(
                 f"CREATE TABLE {self.table} ("
@@ -117,38 +152,40 @@ class NeonStore:
                 "  metadata jsonb NOT NULL DEFAULT '{}',"
                 f"  embedding vector({int(dimension)}) NOT NULL)"
             )
+        self._run(go)
 
     def upsert(self, chunks: list[Chunk]) -> None:
         from psycopg.types.json import Jsonb
 
         rows = [(c.id, c.text, Jsonb(c.metadata), np.array(c.vector, dtype=np.float32)) for c in chunks]
-        with self._lock, self._connection().cursor() as cur:
-            cur.executemany(
-                f"INSERT INTO {self.table} (id, text, metadata, embedding) VALUES (%s, %s, %s, %s) "
-                "ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text, metadata = EXCLUDED.metadata, "
-                "embedding = EXCLUDED.embedding",
-                rows,
-            )
+
+        def go(c):
+            with c.cursor() as cur:
+                cur.executemany(
+                    f"INSERT INTO {self.table} (id, text, metadata, embedding) VALUES (%s, %s, %s, %s) "
+                    "ON CONFLICT (id) DO UPDATE SET text = EXCLUDED.text, metadata = EXCLUDED.metadata, "
+                    "embedding = EXCLUDED.embedding",
+                    rows,
+                )
+        self._run(go)
 
     def search(self, vector: list[float], k: int = 4) -> list[Hit]:
         q = np.array(vector, dtype=np.float32)
-        with self._lock:
-            # `<=>` es la DISTANCIA coseno de pgvector (0 = idénticos); la similitud es 1 - distancia.
-            rows = self._connection().execute(
-                f"SELECT id, text, metadata, 1 - (embedding <=> %s) FROM {self.table} ORDER BY embedding <=> %s LIMIT %s",
-                (q, q, k),
-            ).fetchall()
+        # `<=>` es la DISTANCIA coseno de pgvector (0 = idénticos); la similitud es 1 - distancia.
+        rows = self._run(lambda c: c.execute(
+            f"SELECT id, text, metadata, 1 - (embedding <=> %s) FROM {self.table} ORDER BY embedding <=> %s LIMIT %s",
+            (q, q, k),
+        ).fetchall())
         return [Hit(i, t, m, float(s)) for i, t, m, s in rows]
 
     def count(self) -> int:
-        with self._lock:
-            c = self._connection()
+        def go(c):
             exists = c.execute("SELECT to_regclass(%s)", (self.table,)).fetchone()[0]
             return c.execute(f"SELECT count(*) FROM {self.table}").fetchone()[0] if exists else 0
+        return self._run(go)
 
     def drop(self) -> None:
-        with self._lock:
-            self._connection().execute(f"DROP TABLE IF EXISTS {self.table}")
+        self._run(lambda c: c.execute(f"DROP TABLE IF EXISTS {self.table}"))
 
 
 def create_store(settings: Settings | None = None) -> VectorStore:

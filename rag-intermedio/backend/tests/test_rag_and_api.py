@@ -108,3 +108,18 @@ def test_two_ingestions_cannot_overlap(client):
     finally:
         service._ingest_lock.release()
     assert client.post("/api/ingest", json={}).status_code == 200      # liberado: vuelve a funcionar
+
+
+@pytest.mark.parametrize("error", [RuntimeError("red caída")])
+def test_an_unreachable_store_is_a_503_not_an_empty_store(client, error):
+    """Si no se puede contar los fragmentos NO es "almacén vacío": debe decir qué falló (antes mandaba a ingestar de nuevo)."""
+    from app import main
+    from app.store import MemoryStore
+
+    class Unreachable(MemoryStore):
+        def count(self):
+            raise error
+
+    main.service().store = Unreachable()
+    response = client.post("/api/ask", json={"question": "¿Cuánto cuesta el plan de 300 Mbps?"})
+    assert response.status_code == 503 and "vacío" not in response.json()["detail"]

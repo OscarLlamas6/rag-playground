@@ -117,7 +117,7 @@ borra y la recrea, así cambiar de modelo de embeddings (otra dimensión) o de e
 ## Pruebas
 
 ```bash
-task test             # 26 pruebas de Python (sin red) + vet y pruebas de Go
+task test             # 32 pruebas de Python (sin red) + vet y pruebas de Go
 ```
 
 ## Qué NO hace (a propósito)

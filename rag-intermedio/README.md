@@ -148,7 +148,7 @@ y sección envían más del doble de palabras al modelo (más tokens) que oracio
 ## Pruebas
 
 ```bash
-task test             # 41 pruebas de Python (sin red) + vet y pruebas de Go
+task test             # 42 pruebas de Python (sin red) + vet y pruebas de Go
 ```
 
 ## Qué NO hace

@@ -47,6 +47,19 @@ async def dependency_error(_request, exc: Exception):
     return JSONResponse(status_code=503, content={"detail": str(exc)})
 
 
+def _require_index(svc: RagService) -> None:
+    """409 solo si el almacén está de verdad vacío. Si no se puede consultar, el error se propaga (503 con su mensaje):
+    antes se confundía "no puedo contar" con "no hay nada" y se mandaba a ingestar de nuevo sin necesidad."""
+    try:
+        chunks = svc.store.count()
+    except StoreError:
+        raise
+    except Exception as exc:  # noqa: BLE001
+        raise StoreError(f"No se pudo consultar el almacén ({type(exc).__name__}): {exc}") from exc
+    if chunks == 0:
+        raise HTTPException(status_code=409, detail="El almacén está vacío: ejecuta primero la ingesta.")
+
+
 @app.get("/api/health")
 def health() -> dict:
     """Responde sin tocar ningún servicio externo: sirve para los healthchecks de Docker."""
@@ -86,8 +99,7 @@ def ingest(req: IngestRequest) -> dict:
 @app.post("/api/ask", response_model=AskResponse)
 def ask(req: AskRequest) -> AskResponse:
     svc = service()
-    if svc.status()["chunks"] == 0:
-        raise HTTPException(status_code=409, detail="El almacén está vacío: ejecuta primero la ingesta.")
+    _require_index(svc)
     try:
         a = svc.ask(req.question, k=req.k, threshold=req.threshold, prompt_version=req.prompt_version)
     except TemplateNotFound as exc:
@@ -108,6 +120,5 @@ def ask(req: AskRequest) -> AskResponse:
 @app.post("/api/evaluate")
 def evaluate(req: EvaluateRequest) -> dict:
     svc = service()
-    if svc.status()["chunks"] == 0:
-        raise HTTPException(status_code=409, detail="El almacén está vacío: ejecuta primero la ingesta.")
+    _require_index(svc)
     return evaluation.evaluate(svc, k=req.k, with_generation=req.with_generation)
