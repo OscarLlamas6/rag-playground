@@ -62,10 +62,11 @@ def test_rrf_weights_favor_a_list():
 
 
 # ───────── lectores ─────────
-def test_three_formats_are_read_into_sections():
+def test_formats_are_read_into_sections():
     d = docs()
-    assert {x.type for x in d.values()} == {"md", "html", "docx"}
-    assert all(x.sections and not x.warnings for x in d.values())
+    assert {x.type for x in d.values()} == {"md", "html", "docx", "pdf"}
+    assert all(x.sections for x in d.values())
+    assert all(not x.warnings for x in d.values() if x.type != "pdf")           # el PDF escaneado sí deja advertencias (OCR)
 
 
 def test_html_reader_drops_menus_and_scripts():

@@ -17,7 +17,7 @@ from dataclasses import dataclass
 from .config import get_settings
 from .embeddings import strip_accents
 
-# USD por millón de tokens (entrada, salida). Referencia a octubre de 2026: confirma en la página del proveedor.
+# USD por millón de tokens (entrada, salida). Son cifras de referencia: confirma en la página del proveedor.
 PRICES = {
     # Anthropic
     "claude-haiku-5-5": (0.10, 0.50),

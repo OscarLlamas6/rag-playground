@@ -14,6 +14,8 @@ services:
         required: false
       - path: .env
         required: false
+    environment:
+      STORE: neon                   # fijo por proyecto: el .env de la raíz es compartido (rag-simple usa neon; rag-intermedio, pinecone)
     extra_hosts:
       - "host.docker.internal:host-gateway"   # para llegar a LM Studio, que corre en tu máquina
     ports:

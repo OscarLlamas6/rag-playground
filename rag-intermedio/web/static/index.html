@@ -12,7 +12,7 @@
     <div class="wrap top-row">
       <div>
         <h1>RAG intermedio</h1>
-        <p class="sub">Vectores + palabras exactas, filtros, padre-hijo y reranking. Una pregunta, sin historial.</p>
+        <p class="sub">Vectores + palabras exactas, filtros, padre-hijo y reranking, sobre texto, PDF, audio y video. Una pregunta, sin historial.</p>
       </div>
       <div id="chips" class="chips" aria-live="polite"></div>
     </div>
@@ -74,6 +74,11 @@
         <h2 class="section-title">Lo que vio el modelo <span class="muted small">(los k fragmentos finales)</span></h2>
         <div id="hits" class="hits"></div>
 
+        <div id="player" class="card player" hidden>
+          <div class="player-head"><b id="player-title"></b><button id="player-close" type="button" class="link" aria-label="Cerrar el reproductor">cerrar</button></div>
+          <div id="player-slot"></div>
+        </div>
+
         <details class="card"><summary>Prompt enviado al modelo</summary><pre id="prompt"></pre></details>
         <details class="card"><summary>Tiempos por etapa</summary><div id="timings"></div></details>
       </div>
@@ -83,23 +88,29 @@
     <section id="tab-ingest" class="panel" hidden>
       <form id="ingest-form" class="card">
         <h2>Ingesta</h2>
-        <p class="muted">Lee los documentos (Markdown, HTML y Word), los parte en fragmentos con metadatos (fuente, sección, audiencia), los vectoriza, los guarda en Pinecone y arma el índice BM25. Reconstruye todo el índice.</p>
+        <p class="muted">Lee los documentos (Markdown, HTML, Word y <strong>PDF</strong>) y los medios (<strong>audio y video</strong>), los parte en fragmentos con metadatos (fuente, sección, audiencia, y página o tiempo), los vectoriza, los guarda en Pinecone y arma el índice BM25. Reconstruye todo el índice. Los PDF y los medios necesitan el grupo opcional <code>media</code> (<code>task install:media</code>); la primera vez descargan modelos y tardan más.</p>
+        <div id="media-status" class="chips"></div>
         <div class="row">
           <label class="inline">Estrategia
             <select id="strategy">
               <option value="parent_child">Padre-hijo (busca pequeño, entrega la sección)</option>
               <option value="sentences">Por oraciones (con solape)</option>
               <option value="section">Por sección</option>
+              <option value="docling_hybrid">Docling híbrido (estructura del PDF + límite de tokens)</option>
             </select>
           </label>
-          <label class="inline">Palabras máx.
+          <label class="inline" id="words-field">Palabras máx.
             <input id="max-words" type="number" min="10" max="400" value="35">
+          </label>
+          <label class="inline" id="tokens-field" hidden title="Tokens máximos de cada fragmento, contando sus encabezados">Tokens máx.
+            <input id="max-tokens" type="number" min="32" max="2048" value="256">
           </label>
           <label class="inline"><span id="overlap-label">Solape</span>
             <input id="overlap" type="number" min="0" max="5" value="1" title="Cuánto se repite del final de un fragmento al inicio del siguiente">
           </label>
           <button id="ingest-btn" class="primary" type="submit">Ingestar</button>
         </div>
+        <p id="strategy-help" class="muted small"></p>
       </form>
       <div id="ingest-result" class="card" hidden></div>
     </section>
@@ -120,10 +131,11 @@
     <!-- ───────── Documentos ───────── -->
     <section id="tab-docs" class="panel" hidden>
       <div id="docs" class="card"></div>
+      <div id="media-list" class="card"></div>
     </section>
   </main>
 
-  <footer class="wrap muted small">Datos ficticios (Andes Fibra). Con 26 preguntas, 1 o 2 aciertos de diferencia son ruido.</footer>
+  <footer class="wrap muted small">Datos ficticios (Andes Fibra); los audios y videos de prueba son de terceros y no vienen en el repositorio. Con 26 preguntas, 1 o 2 aciertos de diferencia son ruido.</footer>
   <script src="/app.js"></script>
 </body>
 </html>

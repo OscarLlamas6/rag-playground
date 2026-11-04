@@ -1,0 +1,29 @@
+# Override con PDF (Docling + OCR), audio y video (faster-whisper): construye la imagen con el grupo `media` y ffmpeg.
+# La imagen pesa varios gigas y la primera ingesta descarga modelos de Hugging Face (después quedan en el volumen).
+#
+#   mkdir -p backend/data/media        # copia aquí tus .mp3 .wav .m4a .flac .mp4 .mkv .mov .webm (esa carpeta no va a Git)
+#   docker compose -f docker-compose.yml -f docker-compose.media.yml up --build -d     # o: task docker:up:media
+#
+# Con LM Studio en tu máquina combina también el override del anfitrión (solo Linux):
+#   docker compose -f docker-compose.yml -f docker-compose.host.yml -f docker-compose.media.yml up --build -d
+services:
+  backend:
+    build:
+      context: ./backend
+      args:
+        INSTALL_MEDIA: "true"
+    environment:
+      MEDIA_DIR: /app/data/media
+      MEDIA_CACHE_DIR: /app/.cache/media    # transcripciones y conversiones de Docling
+      HF_HOME: /app/.cache/media/hf         # modelos descargados (Whisper, Docling, tokenizers): ruta escribible por el usuario `app`
+      # WHISPER_MODEL: base                 # más rápido y menos preciso que `small`
+      # DOCLING_MAX_PAGES: 30
+    volumes:
+      - ./backend/data/media:/app/data/media:ro      # tus medios, solo lectura
+      - media_cache:/app/.cache/media                # modelos + transcripciones: sobreviven a recrear el contenedor
+  web:
+    environment:
+      PROXY_TIMEOUT_SECONDS: "1800"         # la primera ingesta transcribe y puede tardar minutos
+
+volumes:
+  media_cache:

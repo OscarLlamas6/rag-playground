@@ -65,8 +65,8 @@ def test_lexical_index_is_rebuilt_from_the_cache_after_a_restart():
 def test_api_flow(client):
     assert client.post("/api/ask", json={"question": "¿Cuánto cuesta el plan de 300 Mbps?"}).status_code == 409
     ingest = client.post("/api/ingest", json={}).json()
-    assert ingest["documents"] == 3 and ingest["chunks"] > 30 and set(
-        d["type"] for d in ingest["per_document"].values()) == {"md", "html", "docx"}
+    assert ingest["documents"] == 5 and ingest["chunks"] > 30 and set(
+        d["type"] for d in ingest["per_document"].values()) == {"md", "html", "docx", "pdf"}
     body = client.post("/api/ask", json={"question": "¿Cuánto cuesta el plan de 300 Mbps?", "mode": "hybrid", "k": 3}).json()
     assert "39" in body["answer"] and [s["key"] for s in body["stages"]][:3] == ["vector", "bm25", "rrf"]
     assert body["hits"][0]["number"] == 1 and body["usage"]["provider"] == "fake"
@@ -78,7 +78,7 @@ def test_api_flow(client):
 
 def test_documents_and_examples(client):
     docs = client.get("/api/documents").json()
-    assert sorted(d["type"] for d in docs) == ["docx", "html", "md"]
+    assert sorted(d["type"] for d in docs) == ["docx", "html", "md", "pdf", "pdf"]
     ex = client.get("/api/examples").json()
     assert len(ex) == 26 and {e["type"] for e in ex} == {"semantica", "lexica", "tabla", "filtro"}
 

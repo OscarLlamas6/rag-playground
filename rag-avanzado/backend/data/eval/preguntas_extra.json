@@ -1,0 +1,6 @@
+[
+  {"id": "EX1", "origen": "extra", "tipo": "directa", "saltos": 1, "pregunta": "¿Qué equipo administra el Servicio de notificaciones?", "esperadas": ["Equipo Plataforma"], "respuesta_esperada": "Lo administra el Equipo Plataforma."},
+  {"id": "EX2", "origen": "extra", "tipo": "directa", "saltos": 1, "pregunta": "¿En qué centro de datos se ejecuta la Cola de mensajes?", "esperadas": ["Centro de datos Norte"], "respuesta_esperada": "Se ejecuta en el Centro de datos Norte."},
+  {"id": "EX3", "origen": "extra", "tipo": "dependencias", "saltos": 1, "pregunta": "¿De qué servicios depende directamente el Portal Mi Andes?", "esperadas": ["API de facturación", "Pasarela de pagos", "Servicio de autenticación", "Servicio de notificaciones"], "respuesta_esperada": "Depende directamente de: API de facturación, Pasarela de pagos, Servicio de autenticación, Servicio de notificaciones."},
+  {"id": "EX4", "origen": "extra", "tipo": "impacto", "saltos": 3, "pregunta": "Si falla la cola de mensajes, ¿qué servicios dejan de funcionar?", "esperadas": ["Chat de soporte", "Portal Mi Andes", "Servicio de notificaciones", "Sistema de tickets"], "respuesta_esperada": "Dejan de funcionar: Chat de soporte, Portal Mi Andes, Servicio de notificaciones, Sistema de tickets."}
+]

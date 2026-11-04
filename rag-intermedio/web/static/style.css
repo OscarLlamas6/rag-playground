@@ -109,3 +109,12 @@ label.check input { width: auto; }
 .aud.residencial { background: var(--ok-bg); color: var(--ok); border-color: transparent; }
 td.best, .best { background: var(--ok-bg); font-weight: 700; }
 td.num { font-variant-numeric: tabular-nums; text-align: center; }
+
+/* ───────── citas con página o tiempo, reproductor ───────── */
+button.play { border: 1px solid var(--accent, #2563eb); background: transparent; color: var(--accent, #2563eb); border-radius: 999px; padding: 0 .6rem; font: inherit; font-size: .8rem; cursor: pointer; }
+button.play:hover { background: var(--accent, #2563eb); color: #fff; }
+a.pagelink { font-size: .8rem; border: 1px solid currentColor; border-radius: 999px; padding: 0 .6rem; text-decoration: none; }
+.player { position: sticky; bottom: .5rem; z-index: 5; box-shadow: 0 4px 16px rgba(0, 0, 0, .15); }
+.player-head { display: flex; justify-content: space-between; gap: 1rem; margin-bottom: .4rem; }
+button.link { background: none; border: 0; color: inherit; text-decoration: underline; cursor: pointer; font: inherit; }
+.media-el { width: 100%; max-height: 260px; }

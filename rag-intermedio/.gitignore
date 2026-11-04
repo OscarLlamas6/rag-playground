@@ -1,0 +1,4 @@
+# Medios de prueba (audio y video): material de terceros, nunca al repositorio
+backend/data/media/
+# Cachés locales (transcripciones, conversiones de Docling, fragmentos) y modelos descargados
+backend/.cache/

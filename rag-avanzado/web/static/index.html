@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>RAG avanzado</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="wrap top-row">
+      <div>
+        <h1>RAG avanzado</h1>
+        <p class="sub">GraphRAG: preguntas que hay que construir siguiendo relaciones. Una pregunta, sin historial, pipeline fijo.</p>
+      </div>
+      <div id="chips" class="chips" aria-live="polite"></div>
+    </div>
+    <nav class="wrap tabs" role="tablist" aria-label="Secciones">
+      <button role="tab" aria-selected="true" data-tab="ask">Preguntar</button>
+      <button role="tab" aria-selected="false" data-tab="graph">Grafo</button>
+      <button role="tab" aria-selected="false" data-tab="ingest">Ingesta</button>
+      <button role="tab" aria-selected="false" data-tab="eval">Evaluación</button>
+      <button role="tab" aria-selected="false" data-tab="docs">Documentos</button>
+    </nav>
+  </header>
+
+  <main class="wrap">
+    <div id="alert" class="alert" role="alert" hidden></div>
+
+    <!-- ───────── Preguntar ───────── -->
+    <section id="tab-ask" class="panel">
+      <form id="ask-form" class="card">
+        <label for="question">Tu pregunta</label>
+        <textarea id="question" rows="2" maxlength="500" placeholder="Si cae la base de datos de clientes, ¿qué servicios dejan de funcionar?" required></textarea>
+        <div class="row">
+          <label class="inline">Modo
+            <select id="mode">
+              <option value="hybrid_graph">Híbrido: vectores + hechos del grafo</option>
+              <option value="graph_local">Grafo local: entidades, saltos y hechos</option>
+              <option value="graph_global">Grafo global: resúmenes de comunidades</option>
+              <option value="vector">Vectorial (línea base)</option>
+            </select>
+          </label>
+          <label class="inline">Fragmentos (k)
+            <input id="k" type="number" min="1" max="12" value="4">
+          </label>
+          <label class="inline" title="Saltos máximos del recorrido por el grafo">Saltos
+            <input id="hops" type="number" min="1" max="6" value="4">
+          </label>
+          <label class="inline" title="auto = reglas fijas por palabras de la pregunta (no es un agente); también puedes elegirlo tú">Sentido del recorrido
+            <select id="direction">
+              <option value="auto">Automático (reglas fijas)</option>
+              <option value="reverse">Al revés: quién depende de la entidad</option>
+              <option value="forward">Hacia adelante: de qué depende</option>
+              <option value="both">Ambos sentidos</option>
+            </select>
+          </label>
+          <label class="inline">Grafo
+            <select id="graph-source">
+              <option value="curated">Curado (a mano)</option>
+              <option value="extracted">Extraído (por un LLM)</option>
+            </select>
+          </label>
+          <button id="ask-btn" class="primary" type="submit">Preguntar</button>
+        </div>
+        <div class="row">
+          <label class="check" id="decompose-wrap" title="Un LLM separa la pregunta en subpreguntas; cada una se recupera y las listas se fusionan con RRF"><input id="decompose" type="checkbox"> Descomponer en subpreguntas</label>
+          <label class="check" id="contextual-wrap" title="Busca con los vectores que llevan la frase de contexto (requiere una ingesta contextual)"><input id="contextual" type="checkbox"> Vectores con frase de contexto</label>
+        </div>
+        <p id="mode-help" class="muted small mode-help"></p>
+        <div class="examples-label">Ejemplos (las preguntas de la evaluación, por tipo)</div>
+        <div id="examples"></div>
+      </form>
+
+      <div id="result" hidden>
+        <article class="card answer" aria-live="polite">
+          <h2>Respuesta</h2>
+          <p id="answer-text" class="answer-text"></p>
+          <div id="badges" class="chips"></div>
+          <div id="usage" class="muted small"></div>
+        </article>
+
+        <section id="subgraph-card" class="card" hidden>
+          <h2>Subgrafo usado <span class="muted small">(lo que recorrió la búsqueda)</span></h2>
+          <p id="subgraph-note" class="muted small"></p>
+          <label class="check"><input id="show-full" type="checkbox"> Mostrar también el resto del grafo, atenuado</label>
+          <div id="subgraph" class="graph-box"></div>
+          <div id="graph-legend" class="legend"></div>
+        </section>
+
+        <section id="facts-card" class="card" hidden>
+          <h2>Hechos del grafo y su procedencia</h2>
+          <p class="muted small">Cada hecho es una tripleta (sujeto, relación, objeto). Apunta a la oración del catálogo que la respalda y al fragmento que la contiene: así se puede verificar.</p>
+          <div id="facts" class="table-scroll"></div>
+        </section>
+
+        <section id="sql-card" class="card" hidden>
+          <h2>El recorrido, en SQL</h2>
+          <p id="sql-note" class="muted small"></p>
+          <div id="sql"></div>
+        </section>
+
+        <h2 class="section-title">Cómo se buscó <span class="muted small">(cada etapa del pipeline, de izquierda a derecha)</span></h2>
+        <div id="stages" class="stages"></div>
+
+        <h2 class="section-title">Lo que vio el modelo <span class="muted small">(el contexto numerado: cada elemento se puede citar)</span></h2>
+        <div id="items" class="hits"></div>
+
+        <details class="card"><summary>Prompt enviado al modelo</summary><pre id="prompt"></pre></details>
+        <details class="card"><summary>Tiempos por etapa</summary><div id="timings"></div></details>
+      </div>
+    </section>
+
+    <!-- ───────── Grafo ───────── -->
+    <section id="tab-graph" class="panel" hidden>
+      <div class="card">
+        <h2>Construir el grafo</h2>
+        <p class="muted">Un grafo de conocimiento son <strong>entidades</strong> unidas por <strong>relaciones</strong>. Aquí vive en PostgreSQL (tablas <code>av_entities</code>, <code>av_relations</code> y <code>av_communities</code>) y se recorre con <strong>CTE recursivas</strong>: no hace falta una base de grafos para un grafo pequeño. Hay dos orígenes y se pueden comparar.</p>
+        <div class="row">
+          <button id="build-curated" type="button" class="primary-soft" title="Gratis: no usa el LLM">Construir grafo curado (gratis)</button>
+          <label class="inline">Prompt de extracción
+            <select id="extract-version"><option value="v1">v1: nombres libres</option><option value="v2">v2: lista de entidades conocidas</option></select>
+          </label>
+          <label class="check"><input id="extract-force" type="checkbox"> Ignorar la caché</label>
+          <button id="build-extracted" type="button" title="Una llamada al LLM por sección (16)">Extraer grafo con el LLM</button>
+        </div>
+        <div id="build-result"></div>
+      </div>
+
+      <div class="card">
+        <div class="row between">
+          <h2>El grafo</h2>
+          <div class="row tight">
+            <label class="inline">Grafo
+              <select id="view-source"><option value="curated">Curado</option><option value="extracted">Extraído</option></select>
+            </label>
+            <label class="inline">Colorear por
+              <select id="color-by"><option value="community">Comunidad</option><option value="type">Tipo de entidad</option></select>
+            </label>
+            <label class="check"><input id="show-teams" type="checkbox"> Mostrar equipos (administrado_por)</label>
+          </div>
+        </div>
+        <div id="graph-empty" class="muted" hidden>Este grafo aún no está construido: usa los botones de arriba.</div>
+        <div id="graph-stats" class="stats"></div>
+        <div id="full-graph" class="graph-box"></div>
+        <div id="full-legend" class="legend"></div>
+      </div>
+
+      <div class="card">
+        <div class="row between">
+          <h2>Comunidades y búsqueda global</h2>
+          <button id="summarize" type="button" title="Una llamada al LLM por comunidad">Resumir comunidades (usa el LLM)</button>
+        </div>
+        <p class="muted small">Las comunidades son grupos de servicios muy conectados entre sí (Louvain, de networkx). Un LLM resume cada una y el resumen se guarda en la base; para una pregunta global («¿qué grandes grupos hay?») no se recorre nada: se leen los resúmenes (mapa) y se redacta una respuesta (reducción).</p>
+        <div id="communities" class="communities"></div>
+        <details class="simplified">
+          <summary>Qué es esta búsqueda global y qué le falta frente a las reales</summary>
+          <p>Es una <strong>versión simplificada</strong> de la búsqueda global de Microsoft GraphRAG. Aquí: una sola partición de comunidades (Louvain), un resumen por comunidad y un mapa-reducción en una pasada. Le falta, frente a <strong>Microsoft GraphRAG</strong>: comunidades <em>jerárquicas</em> (Leiden, varios niveles) para elegir cuánto detalle leer; que el LLM <em>extraiga</em> entidades y afirmaciones de cada fragmento (aquí el inventario de entidades es curado); informes de comunidad con hallazgos puntuados por importancia y un mapa con puntaje para descartar y ordenar respuestas parciales; la búsqueda DRIFT y el ajuste de prompts por dominio. Y frente a <strong>LightRAG</strong>: la indexación de entidades y relaciones con descripciones, las búsquedas de doble nivel (palabras clave locales y globales) y la actualización incremental sin reindexar todo.</p>
+        </details>
+      </div>
+    </section>
+
+    <!-- ───────── Ingesta ───────── -->
+    <section id="tab-ingest" class="panel" hidden>
+      <form id="ingest-form" class="card">
+        <h2>Ingesta</h2>
+        <p class="muted">Lee el catálogo, lo parte en fragmentos, los vectoriza y los guarda en PostgreSQL (pgvector). Con <strong>contextual</strong> (<em>Contextual Retrieval</em>), un LLM escribe antes una frase que sitúa cada fragmento en el catálogo («este fragmento describe el servicio X, que…») y esa frase se antepone antes de vectorizar. Se guardan <em>dos</em> vectores por fragmento (con y sin frase) para poder compararlos en la evaluación. Reconstruye todos los fragmentos.</p>
+        <div class="row">
+          <label class="inline">Estrategia
+            <select id="strategy"><option value="sentences">Por oraciones</option><option value="section">Por sección</option></select>
+          </label>
+          <label class="inline">Palabras máx.
+            <input id="max-words" type="number" min="10" max="400" value="25">
+          </label>
+          <label class="inline">Solape (oraciones)
+            <input id="overlap" type="number" min="0" max="5" value="0">
+          </label>
+          <label class="check" title="Antepone el título de la sección al texto antes de vectorizar. Sin él, un fragmento como «Se ejecuta en el Centro de datos Norte» no dice de qué servicio habla."><input id="heading" type="checkbox" checked> Título de la sección en el texto vectorizado</label>
+          <label class="check" title="Una llamada al LLM por fragmento; se cachea en disco"><input id="contextual-ingest" type="checkbox"> Contextual (usa el LLM)</label>
+          <label class="check"><input id="force-context" type="checkbox"> Ignorar la caché</label>
+          <button id="ingest-btn" class="primary" type="submit">Ingestar</button>
+        </div>
+      </form>
+      <div id="ingest-result" class="card" hidden></div>
+    </section>
+
+    <!-- ───────── Evaluación ───────── -->
+    <section id="tab-eval" class="panel" hidden>
+      <div class="card">
+        <h2>Evaluación: ¿ayuda el grafo? ¿cuándo no?</h2>
+        <p class="muted">Compara configuraciones con las mismas preguntas multi-salto (las 8 de la sesión del curso y 4 extra, una de ellas de control: una pregunta directa donde los vectores bastan). Mide la <strong>cobertura del contexto</strong> (¿llegaron al prompt las entidades esperadas?) sin llamar al modelo; con <strong>respuestas</strong> mide además el recall y la precisión de lo que dijo, las respuestas completas, las citas válidas, el costo y la latencia.</p>
+        <div id="eval-configs" class="config-list"></div>
+        <div class="row">
+          <button id="eval-free" class="primary-soft" type="button">Cobertura del contexto (gratis)</button>
+          <button id="eval-full" type="button" title="Una llamada al LLM por pregunta y configuración, más las de descomponer y mapa">Con respuestas del modelo (usa el LLM)</button>
+        </div>
+      </div>
+      <div id="eval-result" hidden></div>
+    </section>
+
+    <!-- ───────── Documentos ───────── -->
+    <section id="tab-docs" class="panel" hidden>
+      <div id="docs" class="card"></div>
+    </section>
+  </main>
+
+  <footer class="wrap muted small">Datos ficticios (Andes Fibra). Con 12 preguntas, una o dos de diferencia son ruido. El RAG agéntico se verá en sesiones posteriores.</footer>
+  <script src="/app.js"></script>
+</body>
+</html>

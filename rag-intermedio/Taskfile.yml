@@ -13,9 +13,17 @@ tasks:
     cmds:
       - uv sync
 
+  install:media:
+    desc: Instala también el grupo opcional `media` (Docling, faster-whisper, av<16, torch CPU; varios GB) para PDF con OCR, audio y video
+    dir: backend
+    cmds:
+      - uv sync --group media
+
   backend:
     desc: API en http://localhost:8010 (documentación en /docs)
     dir: backend
+    env:
+      STORE: pinecone
     cmds:
       - uv run uvicorn app.main:app --reload --port 8010
 
@@ -36,6 +44,12 @@ tasks:
     dir: backend
     cmds:
       - uv run pytest -q
+
+  test:media:
+    desc: Pruebas REALES con Docling y faster-whisper (necesitan `task install:media`; se omiten si faltan modelos o medios)
+    dir: backend
+    cmds:
+      - uv run --group media pytest -q -m media
 
   test:web:
     desc: vet y pruebas de Go
@@ -63,6 +77,12 @@ tasks:
     desc: Todo en contenedores, sin cuentas ni servidores → http://localhost:8081
     cmds:
       - docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build -d
+
+  docker:up:media:
+    desc: "Todo en contenedores CON el grupo media (PDF con OCR, audio y video; imagen de varios GB) → http://localhost:8081"
+    cmds:
+      - mkdir -p backend/data/media
+      - docker compose -f docker-compose.yml -f docker-compose.media.yml up --build -d
 
   docker:up:host:
     desc: "Como docker:up, pero en la red del anfitrión (solo Linux): alcanza LM Studio en localhost sin abrirlo a la red"

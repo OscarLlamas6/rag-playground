@@ -1,0 +1,66 @@
+# rag-avanzado: base de datos (PostgreSQL + pgvector) + backend (FastAPI) + web (Go).
+#
+#   docker compose up --build            # completo: usa tu .env (modelo y embeddings); la base de datos es el servicio `db`
+#   docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build    # demo: sin cuentas ni servidores, grafo en memoria
+#
+# Interfaz: http://localhost:8082   ·   API: http://localhost:8020/docs
+name: rag-avanzado
+
+services:
+  db:
+    # La imagen oficial de pgvector sobre PostgreSQL 17 (etiqueta fija: el mismo resultado hoy y dentro de un año).
+    image: pgvector/pgvector:0.8.1-pg17
+    user: postgres                              # el proceso corre sin privilegios, no como root
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag}      # solo para desarrollo: la base no sale de tu equipo (puerto en 127.0.0.1)
+      POSTGRES_DB: rag
+    ports:
+      - "127.0.0.1:5434:5432"                   # solo para depurar desde tu máquina (psql, task backend); el backend usa la red interna
+    volumes:
+      - pgdata:/var/lib/postgresql/data         # volumen con nombre: sobrevive a `docker compose down` (se borra con `down -v`)
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag -d rag"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+      start_period: 5s
+    restart: unless-stopped
+
+  backend:
+    build: ./backend
+    env_file:                                   # ambos son opcionales; el de este proyecto gana sobre el de la raíz
+      - path: ../.env
+        required: false
+      - path: .env
+        required: false
+    environment:
+      AVANZADO_STORE: postgres
+      DATABASE_URL: postgresql://rag:${POSTGRES_PASSWORD:-rag}@db:5432/rag
+    extra_hosts:
+      - "host.docker.internal:host-gateway"     # para llegar a LM Studio, que corre en tu máquina
+    ports:
+      - "127.0.0.1:8020:8020"                   # solo accesible desde tu equipo
+    volumes:
+      - ./backend/data:/app/data:ro             # editar el catálogo, el grafo curado y las preguntas sin reconstruir la imagen
+      - ./backend/prompts:/app/prompts:ro
+      - cache:/app/.cache                       # frases de contexto, tripletas y resúmenes ya generados (cuestan llamadas al LLM)
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build: ./web
+    environment:
+      BACKEND_URL: http://backend:8020
+    ports:
+      - "127.0.0.1:8082:8082"
+    depends_on:
+      backend:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  cache:

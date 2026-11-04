@@ -16,6 +16,8 @@ tasks:
   backend:
     desc: API en http://localhost:8000 (documentación en /docs)
     dir: backend
+    env:
+      STORE: neon
     cmds:
       - uv run uvicorn app.main:app --reload --port 8000
 

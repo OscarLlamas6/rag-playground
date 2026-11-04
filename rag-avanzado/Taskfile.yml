@@ -1,0 +1,92 @@
+# https://taskfile.dev · `task` lista las tareas · requiere: uv (Python), Go y, para Docker, docker compose.
+version: "3"
+
+tasks:
+  default:
+    silent: true
+    cmds:
+      - task --list
+
+  install:
+    desc: Instala las dependencias de Python
+    dir: backend
+    cmds:
+      - uv sync
+
+  db:up:
+    desc: Solo la base de datos (PostgreSQL + pgvector en Docker), publicada en 127.0.0.1:5434, para `task backend`
+    cmds:
+      - docker compose up -d --wait db
+
+  backend:
+    desc: API en http://localhost:8020 (documentación en /docs). Necesita `task db:up` (o usa AVANZADO_STORE=memory)
+    dir: backend
+    cmds:
+      - uv run uvicorn app.main:app --reload --port 8020
+
+  web:
+    desc: Interfaz en http://localhost:8082
+    dir: web
+    cmds:
+      - go run .
+
+  test:
+    desc: Pruebas de Python (sin servidores ni cuentas) y de Go
+    cmds:
+      - task: test:backend
+      - task: test:web
+
+  test:backend:
+    desc: Pruebas de Python
+    dir: backend
+    cmds:
+      - uv run pytest -q
+
+  test:web:
+    desc: vet y pruebas de Go
+    dir: web
+    cmds:
+      - go vet ./...
+      - go test ./...
+
+  test:integration:
+    desc: Pruebas contra el PostgreSQL real (levanta SOLO el servicio db y lo elimina, con su volumen, al terminar)
+    cmds:
+      - docker compose up -d --wait db
+      - defer: docker compose down -v
+      - cd backend && TEST_DATABASE_URL=postgresql://rag:${POSTGRES_PASSWORD:-rag}@127.0.0.1:5434/rag uv run pytest -q tests/test_postgres_integration.py
+
+  demo:
+    desc: Backend sin cuentas ni servidores (modelo y embeddings "fake", grafo y fragmentos en memoria)
+    dir: backend
+    env:
+      LLM_PROVIDER: fake
+      EMBEDDINGS_PROVIDER: fake
+      AVANZADO_STORE: memory
+    cmds:
+      - uv run uvicorn app.main:app --port 8020
+
+  docker:up:
+    desc: Todo en contenedores (db + backend + web), con tu .env → http://localhost:8082
+    cmds:
+      - docker compose up --build -d
+
+  docker:demo:
+    desc: Todo en contenedores, sin cuentas, sin servidores y sin base de datos (todo en memoria) → http://localhost:8082
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.demo.yml up --build -d
+
+  docker:up:host:
+    desc: "Como docker:up, pero en la red del anfitrión (solo Linux): alcanza LM Studio en localhost sin abrirlo a la red"
+    cmds:
+      - docker compose -f docker-compose.yml -f docker-compose.host.yml up --build -d
+
+  docker:down:
+    desc: Detiene y elimina los contenedores (el volumen de la base se conserva; `docker compose down -v` lo borra)
+    cmds:
+      - docker compose down
+
+  docker:logs:
+    desc: Sigue los logs de los contenedores
+    cmds:
+      - docker compose logs -f

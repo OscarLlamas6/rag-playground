@@ -9,15 +9,18 @@ from __future__ import annotations
 from jinja2 import Environment, FileSystemLoader, StrictUndefined
 
 from .config import get_settings
+from .locations import location
 
 
 def _env() -> Environment:
-    return Environment(
+    env = Environment(
         loader=FileSystemLoader(get_settings().prompts_dir),
         undefined=StrictUndefined,
         trim_blocks=True,
         lstrip_blocks=True,
     )
+    env.filters["location"] = lambda metadata: location(metadata)       # 'p. 12' o '12:30–13:10' ('' si no hay)
+    return env
 
 
 def versions(name: str) -> list[str]:

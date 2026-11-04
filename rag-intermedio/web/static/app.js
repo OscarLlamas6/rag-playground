@@ -55,6 +55,8 @@ async function guarded(button, task) {
 const money = (usd) => (usd === 0 ? "US$ 0" : `US$ ${usd.toFixed(usd < 0.01 ? 6 : 4)}`);
 const chip = (text, kind = "") => h("span", { class: `chip ${kind}` }, text);
 const audienceTag = (a) => h("span", { class: `aud ${a}` }, a);
+const mmss = (s) => { const t = Math.max(0, Math.floor(s)); const hh = Math.floor(t / 3600); const mm = Math.floor((t % 3600) / 60); const ss = t % 60;
+  return hh ? `${hh}:${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}` : `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`; };
 const short = (text, n = 90) => (text.length > n ? `${text.slice(0, n).trim()}…` : text);
 
 // ───────────── pestañas ─────────────
@@ -75,6 +77,11 @@ async function refreshStatus() {
     chip(s.chunks ? `${s.chunks} fragmentos indexados` : "Sin ingestar", s.chunks ? "ok" : "warn"),
   );
   if (s.store_error) showError(`Almacén: ${s.store_error}`);
+  const m = s.media;
+  $("media-status").replaceChildren(
+    chip(m.docling ? "Docling (PDF) instalado" : "PDF: falta el grupo media", m.docling ? "ok" : "warn"),
+    chip(m.faster_whisper && m.ffmpeg ? `Whisper (${m.whisper_model}) instalado` : "Audio y video: falta el grupo media o ffmpeg", m.faster_whisper && m.ffmpeg ? "ok" : "warn"),
+    chip(`Tope de ${m.docling_max_pages || "sin tope"} páginas por PDF · OCR: ${m.docling_ocr}`));
   return s;
 }
 
@@ -124,6 +131,36 @@ function renderAnswer(text, hitCount) {
   return nodes;
 }
 
+/** Reproduce un audio o video en el instante citado (HTML5; el backend atiende Range, así que salta sin descargar todo). */
+function playAt(media, type, seconds) {
+  const slot = $("player-slot");
+  const url = `/api/media/${encodeURIComponent(media)}`;
+  let el = slot.firstElementChild;
+  if (!el || el.dataset.media !== media) {
+    el = h(type === "video" ? "video" : "audio", { controls: true, preload: "metadata", src: url, "data-media": media, class: "media-el" });
+    slot.replaceChildren(el);
+  }
+  $("player-title").textContent = `${media} · ${mmss(seconds)}`;
+  $("player").hidden = false;
+  const go = () => { el.currentTime = seconds; el.play().catch(() => {}); };
+  if (el.readyState >= 1) go(); else el.addEventListener("loadedmetadata", go, { once: true });
+  $("player").scrollIntoView({ behavior: "smooth", block: "nearest" });
+}
+$("player-close").addEventListener("click", () => { $("player-slot").replaceChildren(); $("player").hidden = true; });
+
+/** La cita de un fragmento: botón ▶ mm:ss en audio y video, enlace a la página en un PDF, nada en el resto. */
+function citeLocation(hit) {
+  if (hit.media != null && hit.start_s != null) {
+    return h("button", { type: "button", class: "play", title: `Reproducir ${hit.media} desde ${mmss(hit.start_s)}`,
+      onclick: () => playAt(hit.media, hit.type, hit.start_s) }, `▶ ${mmss(hit.start_s)}`);
+  }
+  if (hit.type === "pdf" && hit.page) {
+    return h("a", { class: "pagelink", href: `/api/pdf/${encodeURIComponent(hit.source)}#page=${hit.page}`, target: "_blank", rel: "noopener",
+      title: "Abrir el PDF en esa página" }, hit.location);
+  }
+  return null;
+}
+
 function focusHit(n) {
   const el = $(`hit-${n}`);
   el.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -139,7 +176,7 @@ function renderStages(stages, finalIds) {
       const ranks = hit.ranks ? ` · ${Object.entries(hit.ranks).map(([name, pos]) => `${name === "vector" ? "V" : "B"}#${pos}`).join(" ")}` : "";
       return h("li", { class: finalIds.has(hit.id) ? "final" : "" },
         h("b", {}, `${i + 1}. ${hit.section}`),
-        h("div", { class: "meta" }, `${hit.source} · `, audienceTag(hit.audience), ` · ${hit.score}${ranks}`),
+        h("div", { class: "meta" }, `${hit.source} · `, hit.location ? `${hit.location} · ` : "", audienceTag(hit.audience), ` · ${hit.score}${ranks}`),
         h("div", { class: "meta" }, short(hit.text, 70)));
     });
     return h("div", { class: "stage" },
@@ -171,6 +208,7 @@ function renderResult(r) {
       h("div", { class: "hit-head" },
         h("span", { class: "num" }, String(hit.number)),
         h("span", { class: "hit-source" }, `${hit.source} › ${hit.section}`),
+                citeLocation(hit),
         audienceTag(hit.audience),
         hit.cited ? chip("citado", "ok") : null,
         h("span", { class: "score", title: "Puntaje de la última etapa que lo ordenó" }, hit.score.toFixed(3))),
@@ -196,8 +234,23 @@ $("ask-form").addEventListener("submit", (event) => {
 });
 
 // ───────────── ingesta ─────────────
+/** Lo que se sabe de cada archivo tras leerlo: OCR y páginas (PDF), idioma y duración (audio y video), tiempos y caché. */
+function ingestDetail(d) {
+  if (d.skipped) return "omitido (ver advertencias)";
+  const parts = [];
+  if (d.type === "pdf") {
+    parts.push(d.ocr ? "OCR: sí" : "OCR: no", `${d.pages}${d.pages_total > d.pages ? ` de ${d.pages_total}` : ""} págs.`);
+  } else if (d.type === "audio" || d.type === "video") {
+    parts.push(`${mmss(d.duration_s)}`, `idioma ${d.language}`, `Whisper ${d.model}`);
+    if (!d.from_cache) parts.push(`transcripción ${d.transcribe_seconds} s`);
+  }
+  if (d.seconds != null) parts.push(d.from_cache ? "desde caché" : `${d.seconds} s`);
+  if (d.strategy_used && d.strategy_used !== "docling_hybrid" && d.strategy_used.includes("respaldo")) parts.push(d.strategy_used);
+  return parts.join(" · ");
+}
+
 // El solape no significa lo mismo en cada estrategia: se dice en la etiqueta y se desactiva cuando no aplica.
-const OVERLAP_UNITS = {"sentences": "oraciones", "parent_child": null, "section": null};   // null = la estrategia no usa solape
+const OVERLAP_UNITS = {"sentences": "oraciones", "parent_child": null, "section": null, "docling_hybrid": null};   // null = la estrategia no usa solape
 function updateOverlapLabel() {
   const unit = OVERLAP_UNITS[$("strategy").value];
   $("overlap-label").textContent = unit ? `Solape (${unit})` : "Solape (no aplica)";
@@ -206,25 +259,40 @@ function updateOverlapLabel() {
 $("strategy").addEventListener("change", updateOverlapLabel);
 updateOverlapLabel();
 
+// Una frase por estrategia: qué hace y, sobre todo, qué NO es.
+const STRATEGY_HELP = {
+  parent_child: "Busca con trozos pequeños y entrega al modelo la sección completa a la que pertenecen.",
+  sentences: "Junta oraciones hasta el máximo de palabras, repitiendo las últimas del fragmento anterior (solape).",
+  section: "Un fragmento por sección: más contexto por fragmento, pero un vector más diluido.",
+  docling_hybrid: "Chunking híbrido de Docling: sigue la estructura del PDF (encabezados, tablas, listas) y respeta un límite de tokens, uniendo lo muy pequeño y partiendo lo muy grande; se vectoriza cada fragmento con sus encabezados. NO es la «búsqueda híbrida» BM25 + vectores. Md, html y Word no pasan por Docling: usan «por oraciones» con un tamaño equivalente. Audio y video ya vienen en ventanas de tiempo.",
+};
+function updateStrategyUi() {
+  const s = $("strategy").value;
+  $("strategy-help").textContent = STRATEGY_HELP[s] || "";
+  $("words-field").hidden = s === "docling_hybrid";
+  $("tokens-field").hidden = s !== "docling_hybrid";
+}
 $("strategy").addEventListener("change", () => {
   $("max-words").value = $("strategy").value === "parent_child" ? 35 : 70;   // los hijos son más pequeños
+  updateStrategyUi();
 });
+updateStrategyUi();
 
 $("ingest-form").addEventListener("submit", (event) => {
   event.preventDefault();
   guarded($("ingest-btn"), async () => {
     const r = await api("/api/ingest", {
       method: "POST",
-      body: { strategy: $("strategy").value, max_words: Number($("max-words").value), overlap: Number($("overlap").value) },
+      body: { strategy: $("strategy").value, max_words: Number($("max-words").value), overlap: Number($("overlap").value), max_tokens: Number($("max-tokens").value) },
     });
     const box = $("ingest-result");
     box.hidden = false;
     box.replaceChildren(
       h("h2", {}, "Ingesta lista"),
       h("p", {}, `${r.documents} documentos → ${r.chunks} fragmentos de ${r.dimension} dimensiones, en ${r.store} (más el índice BM25), ${r.seconds.toFixed(1)} s.`),
-      ...r.warnings.map((w) => chip(w, "warn")),
-      h("table", {}, h("thead", {}, h("tr", {}, ...["Archivo", "Formato", "Secciones", "Fragmentos"].map((x) => h("th", {}, x)))),
-        h("tbody", {}, ...Object.entries(r.per_document).map(([name, d]) => h("tr", {}, h("td", {}, name), h("td", {}, d.type), h("td", {}, String(d.sections)), h("td", {}, String(d.chunks)))))),
+      h("div", { class: "chips" }, ...r.warnings.map((w) => chip(w, "warn"))),
+      h("div", { class: "table-scroll" }, h("table", {}, h("thead", {}, h("tr", {}, ...["Archivo", "Formato", "Secciones", "Fragmentos", "Detalle"].map((x) => h("th", {}, x)))),
+        h("tbody", {}, ...Object.entries(r.per_document).map(([name, d]) => h("tr", {}, h("td", {}, name), h("td", {}, d.type), h("td", {}, String(d.sections)), h("td", {}, String(d.chunks)), h("td", {}, ingestDetail(d)))))))
     );
     await refreshStatus();
   });
@@ -282,7 +350,14 @@ async function loadDocs() {
   $("docs").replaceChildren(h("h2", {}, "Documentos de origen"),
     h("p", { class: "muted" }, "Un Markdown, una página web y un Word: cada lector extrae el texto y conserva la estructura (en el HTML se descartan menús y scripts; en el Word, las tablas pasan a líneas “celda | celda”)."),
     ...docs.map((d) => h("div", { class: "doc" }, h("h3", {}, `${d.source} `, chip(d.type)),
+      d.type === "pdf" ? h("p", { class: "muted small" }, `${d.size_kb} KB · `, h("a", { href: d.url, target: "_blank", rel: "noopener" }, "abrir el PDF"), ` · ${d.warnings.join(" ")}`) : null,
       ...d.sections.map((sec) => h("details", {}, h("summary", {}, `${sec.title} · ${sec.words} palabras`), h("p", {}, sec.text))))));
+  const media = await api("/api/media");
+  $("media-list").replaceChildren(h("h2", {}, "Audio y video"),
+    h("p", { class: "muted" }, "Carpeta de medios (MEDIA_DIR, fuera de Git). Se transcriben con faster-whisper al ingestar; los fragmentos citan el instante y el botón ▶ de una respuesta los reproduce."),
+    media.length ? null : h("p", { class: "empty" }, "No hay audios ni videos. Copia archivos .mp3 .wav .m4a .flac .mp4 .mkv .mov .webm a backend/data/media/."),
+    ...media.map((m) => h("div", { class: "doc" }, h("h3", {}, `${m.name} `, chip(m.type), m.duration ? chip(m.duration) : null),
+      h(m.type === "video" ? "video" : "audio", { controls: true, preload: "none", src: m.url, class: "media-el" }))));
   docsLoaded = true;
 }
 

@@ -13,6 +13,7 @@ class IngestRequest(BaseModel):
     strategy: str = Field("parent_child", description=f"Estrategia de fragmentado: {', '.join(STRATEGIES)}")
     max_words: int = Field(35, ge=10, le=400, description="Palabras máximas por fragmento (por hijo, en padre-hijo)")
     overlap: int = Field(1, ge=0, le=5)
+    max_tokens: int = Field(256, ge=32, le=2048, description="Solo docling_hybrid: tokens máximos por fragmento (con sus encabezados)")
 
 
 class AskRequest(BaseModel):

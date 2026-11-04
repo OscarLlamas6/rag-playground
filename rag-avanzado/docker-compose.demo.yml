@@ -1,0 +1,12 @@
+# Override de demo: embeddings y modelo "fake", y el grafo y los fragmentos EN MEMORIA (no se levanta PostgreSQL).
+# No necesita cuentas ni servidores. Los vectores "fake" son un hash de palabras y el modelo "fake" aplica reglas: no entienden
+# significado. Sirven para ver la interfaz y el flujo; las cifras reales salen con modelos reales.
+services:
+  db:
+    profiles: ["postgres"]          # fuera del perfil por defecto: `up` no lo arranca
+  backend:
+    environment:
+      LLM_PROVIDER: fake
+      EMBEDDINGS_PROVIDER: fake
+      AVANZADO_STORE: memory
+    depends_on: !reset {}

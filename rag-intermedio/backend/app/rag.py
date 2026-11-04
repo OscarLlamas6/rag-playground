@@ -27,8 +27,10 @@ from .chunking import chunk_document, text_to_embed
 from .config import get_settings
 from .domain import Chunk, Hit
 from .embeddings import embed, embed_query
+from .extras import capabilities
 from .fusion import rrf
-from .ingest import load_documents
+from .ingest import load_all
+from .locations import location
 from .lexical import BM25
 from .llm import NOT_FOUND, LLMResult, generate
 from .store import StoreError, VectorStore, create_store
@@ -62,9 +64,16 @@ def expand_to_parents(hits: list[Hit]) -> list[Hit]:
 
 
 def hit_view(hit: Hit, **extra) -> dict:
-    return {"id": hit.id, "source": hit.metadata.get("source", "?"), "section": hit.metadata.get("section", "?"),
-            "audience": hit.metadata.get("audience", "?"), "type": hit.metadata.get("type", "?"),
-            "score": round(hit.score, 4), "text": hit.text, **extra}
+    """Lo que ve la interfaz de un resultado. Suma la posición para citar: `location` ('p. 12' o '12:30–13:10') y, en audio
+    y video, el nombre del medio y el segundo de inicio (para el botón ▶ que reproduce ese instante)."""
+    meta = hit.metadata
+    view = {"id": hit.id, "source": meta.get("source", "?"), "section": meta.get("section", "?"),
+            "audience": meta.get("audience", "?"), "type": meta.get("type", "?"),
+            "score": round(hit.score, 4), "text": hit.text, "location": location(meta)}
+    for key in ("page", "page_end", "media", "start_s", "end_s", "content"):
+        if meta.get(key) is not None:
+            view[key] = meta[key]
+    return {**view, **extra}
 
 
 @dataclass
@@ -165,26 +174,36 @@ class RagService:
         return self._bm25
 
     # ───────────── ingesta ─────────────
-    def ingest(self, strategy: str = "parent_child", max_words: int = 35, overlap: int = 1) -> IngestReport:
+    def ingest(self, strategy: str = "parent_child", max_words: int = 35, overlap: int = 1, max_tokens: int = 256) -> IngestReport:
         if not self._ingest_lock.acquire(blocking=False):
             raise IngestBusy("Ya hay una ingesta en curso: espera a que termine.")
         try:
-            return self._ingest(strategy, max_words, overlap)
+            return self._ingest(strategy, max_words, overlap, max_tokens)
         finally:
             self._ingest_lock.release()
 
-    def _ingest(self, strategy: str, max_words: int, overlap: int) -> IngestReport:
+    def _ingest(self, strategy: str, max_words: int, overlap: int, max_tokens: int) -> IngestReport:
         t0 = time.perf_counter()
         settings = get_settings()
-        documents = load_documents(settings.docs_dir)
+        documents = load_all(settings)
         chunks: list[Chunk] = []
         per_document: dict[str, dict] = {}
         warnings: list[str] = []
+        read = 0
         for doc in documents:
-            pieces = chunk_document(doc, strategy=strategy, max_words=max_words, overlap=overlap)
-            per_document[doc.source] = {"type": doc.type, "sections": len(doc.sections), "chunks": len(pieces)}
             warnings += [f"{doc.source}: {w}" for w in doc.warnings]
+            if doc.skipped:                      # p. ej. un PDF sin el grupo `media`: se avisa y el resto sigue
+                per_document[doc.source] = {"type": doc.type, "sections": 0, "chunks": 0, "skipped": True}
+                continue
+            read += 1
+            pieces = chunk_document(doc, strategy=strategy, max_words=max_words, overlap=overlap, max_tokens=max_tokens,
+                                    tokenizer=settings.docling_tokenizer)
+            per_document[doc.source] = {"type": doc.type, "sections": len(doc.sections), "chunks": len(pieces), **doc.info}
+            if pieces and pieces[0].metadata.get("strategy_used"):
+                per_document[doc.source]["strategy_used"] = pieces[0].metadata["strategy_used"]
             chunks.extend(pieces)
+        if not chunks:
+            raise ValueError("No hay nada que indexar: " + ("; ".join(warnings) or "los documentos no tienen contenido."))
         vectors = embed([text_to_embed(c) for c in chunks], kind="document")
         for chunk, vector in zip(chunks, vectors):
             chunk.vector = vector
@@ -192,7 +211,7 @@ class RagService:
         self.store.upsert(chunks)
         save_chunks(settings.cache_file, chunks)
         self._build_bm25(chunks)
-        return IngestReport(len(documents), len(chunks), len(vectors[0]), strategy, self.store.name,
+        return IngestReport(read, len(chunks), len(vectors[0]), strategy, self.store.name,
                             time.perf_counter() - t0, per_document, warnings)
 
     # ───────────── recuperación ─────────────
@@ -270,5 +289,7 @@ class RagService:
         return {"llm_provider": s.llm_provider, "llm_model": s.llm_model,
                 "embeddings_provider": s.embeddings_provider, "embeddings_model": s.embeddings_model,
                 "store": self.store.name, "chunks": chunks, "store_error": store_error,
+                "media": {**capabilities(), "whisper_model": s.whisper_model, "docling_max_pages": s.docling_max_pages,
+                          "docling_ocr": s.docling_ocr, "tokenizer": s.docling_tokenizer},
                 "index": s.pinecone_index if self.store.name == "pinecone" else None,
                 "namespace": s.pinecone_namespace if self.store.name == "pinecone" else None}

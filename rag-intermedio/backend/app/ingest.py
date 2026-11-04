@@ -8,17 +8,22 @@ sigue (fragmentar, vectorizar, recuperar) trabaja con basura.
     .html  quita lo que NO es contenido (<script>, <style>, menús, pie de página) y separa por <h2>
     .docx  respeta los estilos de título (Heading 1/2) y convierte las TABLAS en líneas de texto
 
-PDF: este playground no lo incluye. Un PDF con texto se lee igual (una sección por página con `pypdf`); un PDF
-escaneado es una imagen y necesita OCR antes de entrar al RAG.
+    .pdf   lo lee Docling (`pdf.py`): texto con estructura, OCR automático si el PDF es un escaneo y la PÁGINA de cada sección
+    audio/video  se transcriben con faster-whisper (`media.py`) y cada ventana de ~50 s es una sección con su tiempo
+
+PDF, audio y video necesitan el grupo opcional `media`. Sin él se omiten con una advertencia y el resto se ingesta igual.
 """
 
 from __future__ import annotations
 
 from pathlib import Path
 
+from . import media, pdf
+from .config import Settings, get_settings
 from .domain import Document
 
-EXTENSIONS = (".md", ".html", ".htm", ".docx")
+TEXT_EXTENSIONS = (".md", ".html", ".htm", ".docx")
+EXTENSIONS = TEXT_EXTENSIONS + pdf.EXTENSIONS
 
 
 def _from_markdown(path: Path) -> Document:
@@ -111,19 +116,35 @@ def _from_docx(path: Path) -> Document:
     return Document(path.name, title, "docx", sections)
 
 
-def read_document(path: Path) -> Document:
+def read_document(path: Path, settings: Settings | None = None) -> Document:
     readers = {".md": _from_markdown, ".html": _from_html, ".htm": _from_html, ".docx": _from_docx}
     ext = path.suffix.lower()
+    if ext in pdf.EXTENSIONS:
+        return pdf.read_pdf(path, settings)
+    if ext in media.EXTENSIONS:
+        return media.read_media(path, settings)
     if ext not in readers:
-        raise ValueError(f"Formato no soportado: {ext}. Usa: {', '.join(EXTENSIONS)}")
+        raise ValueError(f"Formato no soportado: {ext}. Usa: {', '.join(EXTENSIONS + media.EXTENSIONS)}")
     doc = readers[ext](path)
     if not doc.sections:
         doc.warnings.append("No se extrajo ninguna sección (¿archivo vacío o escaneado?).")
     return doc
 
 
-def load_documents(folder: Path) -> list[Document]:
+def load_documents(folder: Path, settings: Settings | None = None) -> list[Document]:
+    """Los documentos de la carpeta: Markdown, HTML, Word y PDF. Un PDF que no se puede leer viene marcado `skipped`."""
     files = [p for p in sorted(folder.iterdir()) if p.suffix.lower() in EXTENSIONS]
     if not files:
         raise FileNotFoundError(f"No hay documentos {', '.join(EXTENSIONS)} en {folder}")
-    return [read_document(p) for p in files]
+    return [read_document(p, settings) for p in files]
+
+
+def load_all(settings: Settings | None = None) -> list[Document]:
+    """Documentos + medios (audio y video) de las carpetas configuradas. Sin documentos NI medios, es un error."""
+    s = settings or get_settings()
+    docs = load_documents(s.docs_dir, s) if s.docs_dir.is_dir() and any(
+        p.suffix.lower() in EXTENSIONS for p in s.docs_dir.iterdir()) else []
+    docs += media.load_media(s.media_dir, s)
+    if not docs:
+        raise FileNotFoundError(f"No hay documentos ({', '.join(EXTENSIONS)}) en {s.docs_dir} ni medios ({', '.join(media.EXTENSIONS)}) en {s.media_dir}")
+    return docs

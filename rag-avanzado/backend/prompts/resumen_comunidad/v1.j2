@@ -1,0 +1,22 @@
+Eres un analista de TI. Resume en español, en 2 o 3 frases, qué es esta comunidad de servicios de Andes Fibra: qué función cumple el grupo, cuáles son sus piezas más importantes (las que más servicios necesitan) y con qué otras partes del catálogo se conecta. Usa solo los datos de abajo, con los nombres tal cual. No inventes.
+
+Miembros:
+{% for m in comunidad.members %}
+- {{ m.name }} ({{ m.type }}; servicios que dependen directamente de él: {{ m.dependents }})
+{% endfor %}
+
+Relaciones internas:
+{% for f in comunidad.internal %}
+- {{ f }}
+{% endfor %}
+{% if comunidad.external %}
+
+Conexiones con otras comunidades:
+{% for f in comunidad.external %}
+- {{ f }}
+{% endfor %}
+{% endif %}
+{% if comunidad.teams %}
+
+Equipos que los administran: {{ comunidad.teams | join(", ") }}
+{% endif %}

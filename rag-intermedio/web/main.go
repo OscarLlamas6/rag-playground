@@ -8,6 +8,11 @@
 //
 //	BACKEND_URL  dirección del backend      (por defecto http://127.0.0.1:8010)
 //	WEB_ADDR     dirección donde escucha    (por defecto :8081)
+//	PROXY_TIMEOUT_SECONDS  cuánto espera una respuesta del backend (por defecto 900: la primera ingesta de PDF, audio y
+//	             video transcribe y puede tardar minutos)
+//
+// El proxy deja pasar las cabeceras Range / Content-Range / Accept-Ranges tal cual: el navegador necesita saltar a un
+// instante de un audio o un video sin descargarlo entero (GET /api/media/{nombre} responde 206).
 package main
 
 import (
@@ -21,6 +26,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -35,6 +41,14 @@ func env(key, fallback string) string {
 	return fallback
 }
 
+// proxyTimeout lee PROXY_TIMEOUT_SECONDS; si no es un número positivo, usa 900 s.
+func proxyTimeout() time.Duration {
+	if n, err := strconv.Atoi(os.Getenv("PROXY_TIMEOUT_SECONDS")); err == nil && n > 0 {
+		return time.Duration(n) * time.Second
+	}
+	return 900 * time.Second
+}
+
 func writeJSON(w http.ResponseWriter, status int, body any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -46,7 +60,7 @@ func newHandler(backend *url.URL) http.Handler {
 	proxy := httputil.NewSingleHostReverseProxy(backend)
 	proxy.Transport = &http.Transport{
 		DialContext:           (&net.Dialer{Timeout: 5 * time.Second}).DialContext,
-		ResponseHeaderTimeout: 180 * time.Second, // una pregunta puede esperar al modelo de lenguaje
+		ResponseHeaderTimeout: proxyTimeout(), // una pregunta puede esperar al modelo; una ingesta, a Docling y a Whisper
 	}
 	// Si el backend está apagado, la interfaz recibe un JSON con el mismo formato de error que FastAPI.
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {

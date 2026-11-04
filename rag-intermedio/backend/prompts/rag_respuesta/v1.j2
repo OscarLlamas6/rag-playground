@@ -9,7 +9,7 @@ Reglas:
 
 <contexto>
 {% for h in hits %}
-[{{ loop.index }}] (fuente: {{ h.metadata.source }} · sección: {{ h.metadata.section }})
+[{{ loop.index }}] (fuente: {{ h.metadata.source }} · sección: {{ h.metadata.section }}{% if h.metadata | location %} · posición: {{ h.metadata | location }}{% endif %})
 {{ h.text }}
 
 {% endfor %}

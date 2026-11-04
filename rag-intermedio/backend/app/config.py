@@ -27,8 +27,10 @@ load_dotenv(find_dotenv(usecwd=True))
 LLM_PROVIDERS = ("anthropic", "openai", "local", "fake")
 EMBEDDING_PROVIDERS = ("local", "openai", "fake")
 STORES = ("pinecone", "memory")
+DOCLING_OCR_MODES = ("auto", "off", "force")
 
 DEFAULT_LLM_MODEL = {"anthropic": "claude-haiku-5-5", "openai": "gpt-6-luna"}
+DEFAULT_VISION_MODEL = {"anthropic": "claude-haiku-5-5", "openai": "gpt-6-luna", "local": "google/gemma-4-12b-qat"}
 DEFAULT_EMBEDDING_MODEL = {"local": "text-embedding-nomic-embed-text-v2-moe", "openai": "text-embedding-3-small"}
 
 
@@ -52,6 +54,31 @@ def _llm_model(provider: str) -> str:
     if provider == "local":
         return clean(os.getenv("LOCAL_LLM_MODEL")) or clean(os.getenv("LLM_MODEL"))
     return clean(os.getenv("LLM_MODEL")) or DEFAULT_LLM_MODEL.get(provider, "fake")
+
+
+def _clean(name: str, default: str = "") -> str:
+    return os.getenv(name, default).split("#")[0].strip()
+
+
+def _number(name: str, default: float, minimum: float = 0.0) -> float:
+    raw = _clean(name)
+    if not raw:
+        return default
+    try:
+        value = float(raw)
+    except ValueError as exc:
+        raise ValueError(f"{name}='{raw}' no es un número.") from exc
+    if value < minimum:
+        raise ValueError(f"{name}={raw} debe ser al menos {minimum:g}.")
+    return value
+
+
+def _default_tokenizer(embeddings_model: str) -> str:
+    """El tokenizer del chunker debería ser el del modelo que vectoriza. Con nomic v2 es ese; con cualquier otro modelo
+    (OpenAI, mxbai…) no hay un tokenizer de Hugging Face equivalente a mano, y se usa uno pequeño y rápido como aproximación."""
+    if "nomic-embed-text-v2" in embeddings_model.lower():
+        return "nomic-ai/nomic-embed-text-v2-moe"
+    return "sentence-transformers/all-MiniLM-L6-v2"
 
 
 def _choice(name: str, default: str, allowed: tuple[str, ...]) -> str:
@@ -79,6 +106,22 @@ class Settings:
     docs_dir: Path
     eval_file: Path
     prompts_dir: Path
+    # ── ingesta moderna (grupo `media`) ──
+    media_dir: Path
+    media_cache_dir: Path           # transcripciones y conversiones de Docling ya hechas
+    docling_max_pages: int          # tope de páginas por PDF (0 = sin tope)
+    docling_ocr: str                # auto | off | force
+    docling_min_chars: int          # una página con menos caracteres que esto cuenta como "sin texto"
+    docling_tokenizer: str
+    whisper_model: str
+    whisper_language: str | None    # None = detectar el idioma
+    whisper_prompt: str | None      # vocabulario para orientar a Whisper (nombres propios, siglas)
+    media_window_s: float           # duración de cada fragmento de transcripción
+    media_overlap_s: float
+    frame_captions: bool            # EXPERIMENTAL: describir fotogramas de video con un modelo con visión
+    frame_interval_s: float
+    vision_provider: str
+    vision_model: str
 
 
 def get_settings() -> Settings:
@@ -86,6 +129,7 @@ def get_settings() -> Settings:
     emb = _choice("EMBEDDINGS_PROVIDER", "local", EMBEDDING_PROVIDERS)
     llm_model = _llm_model(llm)
     emb_model = os.getenv("EMBEDDINGS_MODEL", "").split("#")[0].strip() or DEFAULT_EMBEDDING_MODEL.get(emb, "fake-hash")
+    vision = _choice("VISION_PROVIDER", "local", ("local", "openai", "anthropic"))
     dims = os.getenv("EMBEDDINGS_DIMENSIONS", "").split("#")[0].strip()
     return Settings(
         llm_provider=llm,
@@ -104,4 +148,19 @@ def get_settings() -> Settings:
         docs_dir=Path(os.getenv("DOCS_DIR", BACKEND_DIR / "data" / "docs")),
         eval_file=Path(os.getenv("EVAL_FILE", BACKEND_DIR / "data" / "eval" / "preguntas.json")),
         prompts_dir=BACKEND_DIR / "prompts",
+        media_dir=Path(os.getenv("MEDIA_DIR") or BACKEND_DIR / "data" / "media"),
+        media_cache_dir=Path(os.getenv("MEDIA_CACHE_DIR") or BACKEND_DIR / ".cache" / "media"),
+        docling_max_pages=int(_number("DOCLING_MAX_PAGES", 30)),
+        docling_ocr=_choice("DOCLING_OCR", "auto", DOCLING_OCR_MODES),
+        docling_min_chars=int(_number("DOCLING_MIN_CHARS", 40)),
+        docling_tokenizer=_clean("DOCLING_TOKENIZER") or _default_tokenizer(emb_model),
+        whisper_model=_clean("WHISPER_MODEL", "small") or "small",
+        whisper_language=_clean("WHISPER_LANGUAGE") or None,
+        whisper_prompt=_clean("WHISPER_PROMPT") or None,
+        media_window_s=_number("MEDIA_WINDOW_SECONDS", 50, 10),
+        media_overlap_s=_number("MEDIA_OVERLAP_SECONDS", 8),
+        frame_captions=_clean("FRAME_CAPTIONS", "false").lower() in ("1", "true", "yes", "si", "sí"),
+        frame_interval_s=_number("FRAME_INTERVAL_SECONDS", 60, 5),
+        vision_provider=vision,
+        vision_model=_clean("VISION_MODEL") or DEFAULT_VISION_MODEL.get(vision, "") or _clean("LOCAL_LLM_MODEL"),
     )
