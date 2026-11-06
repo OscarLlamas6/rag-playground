@@ -98,3 +98,8 @@ tasks:
     desc: Sigue los logs de los contenedores
     cmds:
       - docker compose logs -f
+
+  docker:ps:
+    desc: Lista los contenedores
+    cmds:
+      - docker compose ps
