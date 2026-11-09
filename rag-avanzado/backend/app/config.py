@@ -83,7 +83,7 @@ class Settings:
 
 
 def get_settings() -> Settings:
-    llm = _choice("LLM_PROVIDER", "anthropic", LLM_PROVIDERS)
+    llm = _choice("LLM_PROVIDER", "openai", LLM_PROVIDERS)
     emb = _choice("EMBEDDINGS_PROVIDER", "local", EMBEDDING_PROVIDERS)
     dims = _clean(os.getenv("EMBEDDINGS_DIMENSIONS"))
     data = BACKEND_DIR / "data"
